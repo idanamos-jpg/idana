@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__home__</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    background: radial-gradient(ellipse at top, #1b2a44 0%, #0b1220 70%);
+    color: #e8eefc; padding: 28px 40px; overflow-y: auto;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  h1 { font-size: 30px; margin: 0; font-weight: 700; letter-spacing: .5px; }
+  #clock { font-size: 30px; font-variant-numeric: tabular-nums; opacity: .9; }
+  #date { font-size: 15px; opacity: .6; }
+  form { display: flex; gap: 10px; margin-bottom: 26px; }
+  #q {
+    flex: 1; font-size: 20px; padding: 14px 18px; border-radius: 14px; border: 1px solid #34507a;
+    background: #111c2f; color: #fff; outline: none;
+  }
+  #q:focus { border-color: #4aa3ff; }
+  button.go { font-size: 18px; padding: 0 22px; border-radius: 14px; border: 0; background: #2f7fe0; color: #fff; }
+  h2 { font-size: 17px; font-weight: 600; opacity: .7; margin: 18px 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 14px; }
+  .tile {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 18px; padding: 16px 8px 12px; text-align: center; cursor: pointer;
+    transition: background .15s, transform .15s; user-select: none;
+  }
+  .tile:active, .tile:hover { background: rgba(74,163,255,.22); transform: scale(1.03); }
+  .ic { font-size: 40px; line-height: 52px; height: 52px; }
+  .ic img { width: 52px; height: 52px; border-radius: 12px; }
+  .lb { font-size: 15px; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { font-size: 13px; opacity: .55; margin-top: 4px; }
+  #apps .tile { padding: 12px 6px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>XR Space</h1>
+    <div id="date"></div>
+  </div>
+  <div id="clock"></div>
+</header>
+
+<form id="f">
+  <input id="q" placeholder="חיפוש בגוגל או כתובת אתר" autocomplete="off">
+  <button class="go" type="submit">פתח</button>
+</form>
+
+<h2>אתרים</h2>
+<div class="grid" id="sites"></div>
+
+<h2>מסך הטלפון</h2>
+<div class="grid">
+  <div class="tile" onclick="XR.mirror()"><div class="ic">📱</div><div class="lb">שיקוף מסך הטלפון</div></div>
+</div>
+
+<h2>אפליקציות בטלפון</h2>
+<div class="note">אפליקציה נפתחת בטלפון ומוצגת במשקפיים בחלון שיקוף</div>
+<div class="grid" id="apps" style="margin-top:12px"></div>
+
+<script>
+  var SITES = [
+    ["🔎", "Google", "https://www.google.com"],
+    ["▶️", "YouTube", "https://m.youtube.com"],
+    ["✉️", "Gmail", "https://mail.google.com"],
+    ["📁", "Drive", "https://drive.google.com"],
+    ["📅", "יומן", "https://calendar.google.com"],
+    ["💬", "WhatsApp Web", "https://web.whatsapp.com"],
+    ["🗺️", "מפות", "https://www.google.com/maps"],
+    ["📰", "ynet", "https://www.ynet.co.il"],
+    ["🎬", "Netflix", "https://www.netflix.com"],
+    ["✳️", "Claude", "https://claude.ai"]
+  ];
+  function open(url) { if (window.XR) XR.open(url); else location.href = url; }
+  var sites = document.getElementById("sites");
+  SITES.forEach(function (s) {
+    var d = document.createElement("div");
+    d.className = "tile";
+    d.innerHTML = '<div class="ic">' + s[0] + '</div><div class="lb"></div>';
+    d.querySelector(".lb").textContent = s[1];
+    d.onclick = function () { open(s[2]); };
+    sites.appendChild(d);
+  });
+
+  document.getElementById("f").onsubmit = function (e) {
+    e.preventDefault();
+    var t = document.getElementById("q").value.trim();
+    if (!t) return;
+    var url = /^https?:\/\//.test(t) ? t : (t.indexOf(" ") < 0 && t.indexOf(".") > 0 ? "https://" + t : "https://www.google.com/search?q=" + encodeURIComponent(t));
+    document.getElementById("q").value = "";
+    open(url);
+  };
+
+  function tick() {
+    var n = new Date();
+    document.getElementById("clock").textContent = n.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+    document.getElementById("date").textContent = n.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  }
+  tick(); setInterval(tick, 10000);
+
+  function loadApps() {
+    if (!window.XR) return;
+    var list = [];
+    try { list = JSON.parse(XR.apps()); } catch (e) {}
+    var box = document.getElementById("apps");
+    list.forEach(function (a) {
+      var d = document.createElement("div");
+      d.className = "tile";
+      d.innerHTML = '<div class="ic"></div><div class="lb"></div>';
+      d.querySelector(".lb").textContent = a.label;
+      d.onclick = function () { XR.launch(a.pkg); };
+      box.appendChild(d);
+      a.el = d.querySelector(".ic");
+    });
+    var i = 0;
+    (function next() {
+      if (i >= list.length) return;
+      var a = list[i++];
+      var src = XR.icon(a.pkg);
+      if (src) { var img = new Image(); img.src = src; a.el.appendChild(img); }
+      setTimeout(next, 5);
+    })();
+  }
+  setTimeout(loadApps, 300);
+</script>
+</body>
+</html>
