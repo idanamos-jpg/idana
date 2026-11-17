@@ -124,6 +124,15 @@ class MainActivity : Activity() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (cinemaActive()) {
+            val svc = a11y()
+            val d = dm.getDisplay(cinemaDisplayId)
+            if (svc != null && d != null) svc.showCursor(d, ccx.toInt(), ccy.toInt())
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         tracker.start()
@@ -225,6 +234,7 @@ class MainActivity : Activity() {
 
     /** Called (main thread) when the glasses are unplugged. */
     fun onGlassesRemoved(p: GlassesPresentation) {
+        if (cinemaActive()) { a11y()?.removeCursor(); cinemaDisplayId = -1; updateCinemaUi() }
         detach(p.glView, p.renderer)
         if (glasses === p) glasses = null
         main.post { updateDisplays() }
@@ -323,6 +333,7 @@ class MainActivity : Activity() {
     }
 
     fun moveCursor(dYaw: Float, dPitch: Float, drag: XWindow?) {
+        if (cinemaActive()) { cinemaMove(dYaw * 40f, dPitch * 40f); return }
         space.cursorShownUntil = System.currentTimeMillis() + 3000
         space.cursorYaw = Geo.wrap180(space.cursorYaw - dYaw)
         space.cursorPitch = (space.cursorPitch - dPitch).coerceIn(-80f, 80f)
@@ -343,6 +354,7 @@ class MainActivity : Activity() {
     }
 
     fun click() {
+        if (cinemaActive()) { a11y()?.tap(cinemaDisplayId, ccx, ccy) ?: askAccessibility(); return }
         val h = space.cursorHit() ?: return
         if (space.focused !== h.window) resetLive()
         space.focused = h.window
@@ -354,6 +366,7 @@ class MainActivity : Activity() {
     }
 
     fun scrollStart() {
+        if (cinemaActive()) { cinemaScrolling = true; sdx = ccx; sdy = ccy; a11y()?.dragStart(cinemaDisplayId, ccx, ccy); return }
         val h = space.cursorHit()
         val w = h?.window ?: return
         if (w.kind != XWindow.Kind.WEB) return
@@ -362,10 +375,17 @@ class MainActivity : Activity() {
     }
 
     fun scrollBy(dx: Float, dy: Float) {
+        if (cinemaScrolling) {
+            sdx = (sdx + dx * 1.6f).coerceIn(1f, cinemaW - 2f)
+            sdy = (sdy + dy * 1.6f).coerceIn(1f, cinemaH - 2f)
+            a11y()?.dragTo(sdx, sdy)
+            return
+        }
         scrollWin?.web?.dragBy(dx * 1.3f, dy * 1.3f)
     }
 
     fun scrollEnd() {
+        if (cinemaScrolling) { cinemaScrolling = false; a11y()?.dragEnd(); return }
         scrollWin?.web?.dragEnd()
         scrollWin = null
     }
@@ -432,6 +452,11 @@ class MainActivity : Activity() {
     }
 
     fun launchApp(pkg: String) {
+        val d = findGlassesDisplay()
+        if (d != null && glasses != null && !prefs.getBoolean("appsMirror", false)) {
+            launchOnGlasses(pkg, d)
+            return
+        }
         if (mirrorWindow == null) {
             pendingLaunch = pkg
             requestMirror()
@@ -624,16 +649,19 @@ class MainActivity : Activity() {
         modeBtn = btn("") { setArMode(!space.arMode) }
         hideBtn = btn("") { setHidden(!space.hidden) }
         updateModeButtons()
+        cinemaBtn = btn("🎬 חזרה למרחב המשקפיים", Color.rgb(20, 120, 80)) { exitCinema() }
+        cinemaBtn.visibility = View.GONE
+        v.addView(gridRow(cinemaBtn))
         v.addView(gridRow(modeBtn, hideBtn))
         v.addView(gridRow(
             btn("◎ מרכוז") { recenter() },
             btn("⇄ חלון הבא") { focusNext() },
-            btn("‹ אחורה") { space.focused?.web?.back() }
+            btn("‹ אחורה") { if (cinemaActive()) a11y()?.back() else space.focused?.web?.back() }
         ))
         v.addView(gridRow(
             btn("⌂ בית במשקפיים") { openWeb(LAUNCHER_URL, launcher = true) },
             btn("📱 שיקוף טלפון") { requestMirror() },
-            btn("✕ סגור חלון", Color.rgb(90, 36, 40)) { space.focused?.let { closeWindow(it) } }
+            btn("✕ סגור חלון", Color.rgb(90, 36, 40)) { if (cinemaActive()) exitCinema() else space.focused?.let { closeWindow(it) } }
         ))
         anchorBox = CheckBox(this).apply {
             text = "מסך קבוע במקום (מעקב ראש)"
@@ -659,14 +687,14 @@ class MainActivity : Activity() {
             background = rounded(Color.rgb(28, 40, 62), 12)
             setPadding(dp(14), dp(14), dp(14), dp(14))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
-            setOnEditorActionListener { _, _, _ -> space.focused?.web?.enter(); resetLive(); true }
+            setOnEditorActionListener { _, _, _ -> kbEnter(); resetLive(); true }
             addTextChangedListener(liveWatcher)
         }
         resetLive()
         v.addView(liveInput)
         v.addView(gridRow(
-            btn("⌫ מחק") { space.focused?.web?.backspace() },
-            btn("↵ Enter") { space.focused?.web?.enter(); resetLive() },
+            btn("⌫ מחק") { kbBackspace(1) },
+            btn("↵ Enter") { kbEnter(); resetLive() },
             btn("⌨ פתח מקלדת") { showKeyboard() }
         ))
         v.addView(gridRow(
@@ -876,11 +904,10 @@ class MainActivity : Activity() {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             if (liveGuard || s == null) return
-            val web = space.focused?.web ?: return
-            if (before > 0) web.backspace(before)
+            if (before > 0) kbBackspace(before)
             if (count > 0) {
                 val ins = s.subSequence(start, start + count).toString().replace(sentinel, "")
-                if (ins.isNotEmpty()) web.typeText(ins)
+                if (ins.isNotEmpty()) kbType(ins)
             }
         }
         override fun afterTextChanged(e: Editable?) {
@@ -926,7 +953,8 @@ class MainActivity : Activity() {
         if (!::statusText.isInitialized) return
         val g = if (glasses != null) "משקפיים: מחוברים ✓" else "משקפיים: לא מחוברים (תצוגה מקדימה בטלפון)"
         val mode = (if (space.arMode) "· 🕶 משקפיים חכמים " else "") + if (space.headTracking()) "· קבוע במקום" else "· נעול לראש"
-        statusText.text = "$g   ·   $imuStatus   $mode   ·   חלונות: ${space.visibleWindows().size}"
+        val cin = if (cinemaActive()) "🎬 אפליקציה על מסך המשקפיים   ·   " else ""
+        statusText.text = "$cin$g   ·   $imuStatus   $mode   ·   חלונות: ${space.visibleWindows().size}"
     }
 
     private fun showSettings() {
@@ -951,6 +979,9 @@ class MainActivity : Activity() {
             touchpad.sensitivity = (it.coerceAtLeast(5)) / 1000f
         }
         ll.addView(sensRow)
+        ll.addView(box("לפתוח אפליקציות בחלון שיקוף (במקום על מסך המשקפיים)", prefs.getBoolean("appsMirror", false)) {
+            prefs.edit().putBoolean("appsMirror", it).apply()
+        })
         AlertDialog.Builder(this)
             .setTitle("הגדרות")
             .setView(ll)
@@ -1039,6 +1070,111 @@ class MainActivity : Activity() {
             .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
 
     fun isCharging(): Boolean = getSystemService(android.os.BatteryManager::class.java).isCharging
+
+    // ---------------------------------------------------------------- Apps on the glasses display ("second screen")
+
+    private var cinemaDisplayId = -1
+    private var cinemaW = 1920f
+    private var cinemaH = 1080f
+    private var ccx = 960f
+    private var ccy = 540f
+    private var cinemaScrolling = false
+    private var sdx = 0f
+    private var sdy = 0f
+    private lateinit var cinemaBtn: Button
+
+    private fun cinemaActive() = cinemaDisplayId >= 0
+    private fun a11y(): XrAccessibilityService? = XrAccessibilityService.instance
+
+    /** Open a regular Android app full-screen on the glasses (external display), controlled from the touchpad. */
+    private fun launchOnGlasses(pkg: String, d: Display) {
+        val i = packageManager.getLaunchIntentForPackage(pkg) ?: run { toast("לא ניתן לפתוח"); return }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val opts = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(d.displayId)
+        val g = glasses
+        // Our 3D scene sits above apps on that display, so step it aside
+        g?.glView?.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        g?.hide()
+        try {
+            startActivity(i, opts.toBundle())
+        } catch (e: Exception) {
+            g?.show()
+            g?.glView?.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+            toast("המערכת לא אפשרה לפתוח על מסך המשקפיים — נפתח בשיקוף")
+            prefs.edit().putBoolean("appsMirror", true).apply()
+            launchApp(pkg)
+            return
+        }
+        val m = d.mode
+        cinemaW = maxOf(m.physicalWidth, m.physicalHeight).toFloat()
+        cinemaH = minOf(m.physicalWidth, m.physicalHeight).toFloat()
+        ccx = cinemaW / 2f
+        ccy = cinemaH / 2f
+        cinemaDisplayId = d.displayId
+        updateCinemaUi()
+        val svc = a11y()
+        if (svc == null) askAccessibility()
+        else main.postDelayed({ if (cinemaActive()) svc.showCursor(d, ccx.toInt(), ccy.toInt()) }, 700)
+    }
+
+    private fun cinemaMove(dx: Float, dy: Float) {
+        ccx = (ccx + dx).coerceIn(0f, cinemaW - 1f)
+        ccy = (ccy + dy).coerceIn(0f, cinemaH - 1f)
+        a11y()?.moveCursor(ccx.toInt(), ccy.toInt())
+    }
+
+    fun exitCinema() {
+        if (!cinemaActive()) return
+        a11y()?.removeCursor()
+        cinemaDisplayId = -1
+        glasses?.let {
+            it.show()
+            it.glView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        }
+        updateCinemaUi()
+    }
+
+    private fun updateCinemaUi() {
+        if (!::cinemaBtn.isInitialized) return
+        cinemaBtn.visibility = if (cinemaActive()) View.VISIBLE else View.GONE
+        if (cinemaActive()) selectTab(Tab.CONTROL)
+        updateStatus()
+    }
+
+    private fun kbType(t: String) {
+        if (cinemaActive()) a11y()?.typeText(cinemaDisplayId, t) else space.focused?.web?.typeText(t)
+    }
+
+    private fun kbBackspace(n: Int) {
+        if (cinemaActive()) a11y()?.backspace(cinemaDisplayId, n) else space.focused?.web?.backspace(n)
+    }
+
+    private fun kbEnter() {
+        if (cinemaActive()) a11y()?.enter(cinemaDisplayId) else space.focused?.web?.enter()
+    }
+
+    private var askedA11y = false
+
+    private fun askAccessibility() {
+        if (askedA11y) { toast("כדי לשלוט באפליקציה מהטלפון יש להפעיל את שירות הנגישות"); return }
+        askedA11y = true
+        AlertDialog.Builder(this)
+            .setTitle("שליטה באפליקציות במשקפיים")
+            .setMessage(
+                "כדי להזיז סמן, ללחוץ, לגלול ולהקליד באפליקציה שפתוחה במשקפיים, צריך להפעיל פעם אחת את השירות " +
+                    "\"XR Space – שליטה במשקפיים\" בהגדרות נגישות.\n\n" +
+                    "אם ההפעלה חסומה (אפליקציה שהותקנה מקובץ): פרטי אפליקציה ← ⋮ למעלה ← \"אפשר הגדרות מוגבלות\", ואז שוב לנגישות."
+            )
+            .setPositiveButton("הגדרות נגישות") { _, _ ->
+                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNeutralButton("פרטי אפליקציה") { _, _ ->
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+            }
+            .setNegativeButton("אחר כך", null)
+            .show()
+    }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 }
