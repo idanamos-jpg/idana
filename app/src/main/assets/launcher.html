@@ -5,64 +5,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__home__</title>
 <style>
+  /* Panoramic home screen. Viewport is ~1200x500 CSS px, shown very wide in the glasses. */
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
     font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
-    background: radial-gradient(ellipse at top, #1b2a44 0%, #0b1220 70%);
-    color: #e8eefc; padding: 28px 40px; overflow-y: auto;
+    background: linear-gradient(180deg, #14233d 0%, #0a111e 100%);
+    color: #eef3ff; padding: 14px 28px 24px; overflow-y: auto;
   }
-  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
-  h1 { font-size: 30px; margin: 0; font-weight: 700; letter-spacing: .5px; }
-  #clock { font-size: 30px; font-variant-numeric: tabular-nums; opacity: .9; }
-  #date { font-size: 15px; opacity: .6; }
-  form { display: flex; gap: 10px; margin-bottom: 26px; }
+  .top { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+  .clockbox { min-width: 170px; }
+  #clock { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  #date { font-size: 17px; opacity: .7; margin-top: 4px; }
+  form { flex: 1; display: flex; gap: 10px; }
   #q {
-    flex: 1; font-size: 20px; padding: 14px 18px; border-radius: 14px; border: 1px solid #34507a;
-    background: #111c2f; color: #fff; outline: none;
+    flex: 1; font-size: 24px; padding: 12px 18px; border-radius: 16px; border: 2px solid #3a5a88;
+    background: #0f1b30; color: #fff; outline: none;
   }
-  #q:focus { border-color: #4aa3ff; }
-  button.go { font-size: 18px; padding: 0 22px; border-radius: 14px; border: 0; background: #2f7fe0; color: #fff; }
-  h2 { font-size: 17px; font-weight: 600; opacity: .7; margin: 18px 0 12px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 14px; }
+  #q:focus { border-color: #5ab0ff; }
+  .btn {
+    font-size: 22px; padding: 0 22px; border-radius: 16px; border: 0;
+    background: #2f7fe0; color: #fff; white-space: nowrap; height: 54px;
+  }
+  .btn.alt { background: #26405f; }
+  h2 { font-size: 22px; font-weight: 700; opacity: .85; margin: 14px 4px 10px; }
+  h2 small { font-size: 15px; font-weight: 400; opacity: .7; margin-right: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 12px; }
   .tile {
-    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
-    border-radius: 18px; padding: 16px 8px 12px; text-align: center; cursor: pointer;
-    transition: background .15s, transform .15s; user-select: none;
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10);
+    border-radius: 20px; padding: 14px 6px 12px; text-align: center; user-select: none;
+    transition: background .12s, transform .12s;
   }
-  .tile:active, .tile:hover { background: rgba(74,163,255,.22); transform: scale(1.03); }
-  .ic { font-size: 40px; line-height: 52px; height: 52px; }
-  .ic img { width: 52px; height: 52px; border-radius: 12px; }
-  .lb { font-size: 15px; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .note { font-size: 13px; opacity: .55; margin-top: 4px; }
-  #apps .tile { padding: 12px 6px 10px; }
+  .tile:active { background: rgba(90,176,255,.30); transform: scale(1.04); }
+  .ic { height: 64px; line-height: 64px; font-size: 50px; }
+  .ic img { width: 64px; height: 64px; border-radius: 14px; vertical-align: middle; }
+  .lb { font-size: 19px; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #empty { font-size: 18px; opacity: .6; padding: 10px 4px; }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>XR Space</h1>
+<div class="top">
+  <div class="clockbox">
+    <div id="clock"></div>
     <div id="date"></div>
   </div>
-  <div id="clock"></div>
-</header>
+  <form id="f">
+    <input id="q" placeholder="חיפוש בגוגל או כתובת אתר" autocomplete="off">
+    <button class="btn" type="submit">חפש</button>
+  </form>
+  <button class="btn alt" onclick="XR.mirror()">📱 מסך הטלפון</button>
+</div>
 
-<form id="f">
-  <input id="q" placeholder="חיפוש בגוגל או כתובת אתר" autocomplete="off">
-  <button class="go" type="submit">פתח</button>
-</form>
+<h2>אפליקציות <small>נפתחות בטלפון ומוצגות כאן בחלון</small></h2>
+<div class="grid" id="apps"></div>
+<div id="empty" style="display:none">לא נמצאו אפליקציות</div>
 
 <h2>אתרים</h2>
 <div class="grid" id="sites"></div>
-
-<h2>מסך הטלפון</h2>
-<div class="grid">
-  <div class="tile" onclick="XR.mirror()"><div class="ic">📱</div><div class="lb">שיקוף מסך הטלפון</div></div>
-</div>
-
-<h2>אפליקציות בטלפון</h2>
-<div class="note">אפליקציה נפתחת בטלפון ומוצגת במשקפיים בחלון שיקוף</div>
-<div class="grid" id="apps" style="margin-top:12px"></div>
 
 <script>
   var SITES = [
@@ -77,24 +76,30 @@
     ["🎬", "Netflix", "https://www.netflix.com"],
     ["✳️", "Claude", "https://claude.ai"]
   ];
-  function open(url) { if (window.XR) XR.open(url); else location.href = url; }
-  var sites = document.getElementById("sites");
-  SITES.forEach(function (s) {
+  function openUrl(url) { if (window.XR) XR.open(url); else location.href = url; }
+
+  function tile(icon, label, onclick) {
     var d = document.createElement("div");
     d.className = "tile";
-    d.innerHTML = '<div class="ic">' + s[0] + '</div><div class="lb"></div>';
-    d.querySelector(".lb").textContent = s[1];
-    d.onclick = function () { open(s[2]); };
-    sites.appendChild(d);
-  });
+    d.innerHTML = '<div class="ic"></div><div class="lb"></div>';
+    if (icon) d.querySelector(".ic").textContent = icon;
+    d.querySelector(".lb").textContent = label;
+    d.onclick = onclick;
+    return d;
+  }
+
+  var sites = document.getElementById("sites");
+  SITES.forEach(function (s) { sites.appendChild(tile(s[0], s[1], function () { openUrl(s[2]); })); });
 
   document.getElementById("f").onsubmit = function (e) {
     e.preventDefault();
     var t = document.getElementById("q").value.trim();
     if (!t) return;
-    var url = /^https?:\/\//.test(t) ? t : (t.indexOf(" ") < 0 && t.indexOf(".") > 0 ? "https://" + t : "https://www.google.com/search?q=" + encodeURIComponent(t));
+    var url = /^https?:\/\//.test(t) ? t
+      : (t.indexOf(" ") < 0 && t.indexOf(".") > 0 ? "https://" + t
+      : "https://www.google.com/search?q=" + encodeURIComponent(t));
     document.getElementById("q").value = "";
-    open(url);
+    openUrl(url);
   };
 
   function tick() {
@@ -109,12 +114,9 @@
     var list = [];
     try { list = JSON.parse(XR.apps()); } catch (e) {}
     var box = document.getElementById("apps");
+    if (!list.length) document.getElementById("empty").style.display = "block";
     list.forEach(function (a) {
-      var d = document.createElement("div");
-      d.className = "tile";
-      d.innerHTML = '<div class="ic"></div><div class="lb"></div>';
-      d.querySelector(".lb").textContent = a.label;
-      d.onclick = function () { XR.launch(a.pkg); };
+      var d = tile("", a.label, function () { XR.launch(a.pkg); });
       box.appendChild(d);
       a.el = d.querySelector(".ic");
     });
@@ -127,7 +129,7 @@
       setTimeout(next, 5);
     })();
   }
-  setTimeout(loadApps, 300);
+  setTimeout(loadApps, 200);
 </script>
 </body>
 </html>

@@ -19,10 +19,10 @@ import org.json.JSONObject
 
 /** Hosts a WebView on a private VirtualDisplay whose output feeds the window's SurfaceTexture. */
 @SuppressLint("SetJavaScriptEnabled")
-class WebWindowHost(private val act: MainActivity, private val win: XWindow, startUrl: String, launcher: Boolean) {
+class WebWindowHost(private val act: MainActivity, private val win: XWindow, startUrl: String, launcher: Boolean, dpi: Int = DPI) {
 
     companion object {
-        const val DPI = 200
+        const val DPI = 260
         const val DESKTOP_UA =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
@@ -34,7 +34,7 @@ class WebWindowHost(private val act: MainActivity, private val win: XWindow, sta
 
     init {
         val dm = act.getSystemService(DisplayManager::class.java)
-        val vd = dm.createVirtualDisplay("xr-web-${win.id}", win.pxW, win.pxH, DPI, win.surface, 0)
+        val vd = dm.createVirtualDisplay("xr-web-${win.id}", win.pxW, win.pxH, dpi, win.surface, 0)
         win.vd = vd
         presentation = Presentation(act, vd.display)
         webView = WebView(presentation.context)
@@ -92,6 +92,17 @@ class WebWindowHost(private val act: MainActivity, private val win: XWindow, sta
     fun tap(x: Float, y: Float) {
         inject(MotionEvent.ACTION_DOWN, x, y)
         webView.postDelayed({ inject(MotionEvent.ACTION_UP, x, y) }, 40)
+        // If a text field got focus, pop up the phone keyboard
+        webView.postDelayed({
+            webView.evaluateJavascript(
+                "(function(){var e=document.activeElement;if(!e)return false;" +
+                    "if(e.isContentEditable)return true;" +
+                    "if(e.tagName==='TEXTAREA')return true;" +
+                    "if(e.tagName==='INPUT'){var t=(e.type||'text').toLowerCase();" +
+                    "return ['button','submit','checkbox','radio','range','color','file','reset','image','hidden'].indexOf(t)<0;}" +
+                    "return false;})()"
+            ) { r -> if (r == "true") act.showKeyboard() }
+        }, 350)
     }
 
     fun dragStart(x: Float, y: Float) { lastX = x; lastY = y; inject(MotionEvent.ACTION_DOWN, x, y) }
@@ -143,9 +154,10 @@ class WebWindowHost(private val act: MainActivity, private val win: XWindow, sta
         webView.evaluateJavascript(js, null)
     }
 
-    fun backspace() {
+    fun backspace(count: Int = 1) {
+        if (count <= 0) return
         val js = """
-            (function(){
+            (function(n){ for(var i=0;i<n;i++){
               var e=document.activeElement; if(!e) return;
               var ok=false; try{ ok=document.execCommand('delete',false,null);}catch(x){}
               if(!ok && 'value' in e){
@@ -156,7 +168,7 @@ class WebWindowHost(private val act: MainActivity, private val win: XWindow, sta
                 try{e.selectionStart=e.selectionEnd=s;}catch(x){}
                 e.dispatchEvent(new Event('input',{bubbles:true}));
               }
-            })();
+            }})($count);
         """.trimIndent()
         webView.evaluateJavascript(js, null)
     }

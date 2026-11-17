@@ -26,6 +26,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -235,10 +238,12 @@ class MainActivity : Activity() {
                 space.focused = it; return
             }
         }
-        val w = XWindow(nextId++, XWindow.Kind.WEB, 1280, 800)
-        w.widthM = if (launcher) 1.5f else 1.4f
+        val home = launcher || url == LAUNCHER_URL
+        // Home: wide panoramic screen (2400x1000, CSS 1200x500). Others: 1280x800.
+        val w = if (home) XWindow(nextId++, XWindow.Kind.WEB, 2400, 1000) else XWindow(nextId++, XWindow.Kind.WEB, 1280, 800)
+        w.widthM = if (home) 3.0f else 1.7f
         try {
-            w.web = WebWindowHost(this, w, url, launcher || url == LAUNCHER_URL)
+            w.web = if (home) WebWindowHost(this, w, url, true, 320) else WebWindowHost(this, w, url, false)
         } catch (e: Exception) {
             toast("שגיאה בפתיחת חלון: ${e.message}")
             return
@@ -329,6 +334,7 @@ class MainActivity : Activity() {
 
     fun click() {
         val h = space.cursorHit() ?: return
+        if (space.focused !== h.window) resetLive()
         space.focused = h.window
         syncSizeSeek()
         when (h.window.kind) {
@@ -467,12 +473,12 @@ class MainActivity : Activity() {
     private fun btn(text: String, onClick: () -> Unit) = Button(this).apply {
         this.text = text
         isAllCaps = false
-        textSize = 15f
+        textSize = 17f
         setTextColor(Color.WHITE)
         setBackgroundColor(Color.rgb(34, 44, 62))
         setPadding(dp(14), dp(6), dp(14), dp(6))
         setOnClickListener { onClick() }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(6) }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(50)).apply { marginStart = dp(6) }
     }
 
     private fun row(vararg views: View): View {
@@ -516,7 +522,7 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         statusText = TextView(this).apply {
-            setTextColor(Color.rgb(170, 200, 255)); textSize = 13f
+            setTextColor(Color.rgb(170, 200, 255)); textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
         }
         root.addView(statusText)
@@ -570,28 +576,51 @@ class MainActivity : Activity() {
         controls.addView(curveRow)
         controls.addView(sizeRow)
 
+        liveInput = EditText(this).apply {
+            hint = "⌨ מקלדת: מה שתקליד כאן נכתב ישר בחלון"
+            setHintTextColor(Color.rgb(120, 140, 170))
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            isSingleLine = true
+            imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            setBackgroundColor(Color.rgb(24, 34, 52))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setOnEditorActionListener { _, _, _ -> space.focused?.web?.enter(); resetLive(); true }
+            addTextChangedListener(liveWatcher)
+        }
+        resetLive()
+        val kbRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
+            addView(liveInput)
+            addView(btn("⌨") { showKeyboard() })
+            addView(btn("⌫") { space.focused?.web?.backspace() })
+            addView(btn("↵") { space.focused?.web?.enter(); resetLive() })
+            addView(btn("הסתר") { hideKeyboard() })
+        }
+        controls.addView(kbRow)
+
         input = EditText(this).apply {
-            hint = "טקסט להקלדה בחלון, או כתובת / חיפוש"
+            hint = "כתובת אתר או חיפוש"
             setHintTextColor(Color.rgb(120, 130, 150))
             setTextColor(Color.WHITE)
             textSize = 15f
-            imeOptions = EditorInfo.IME_ACTION_SEND
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnEditorActionListener { _, _, _ -> sendText(); true }
+            isSingleLine = true
+            imeOptions = EditorInfo.IME_ACTION_GO
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setOnEditorActionListener { _, _, _ -> openFromInput(); true }
         }
-        controls.addView(input)
-        controls.addView(row(
-            btn("הקלד") { sendText() },
-            btn("⌫") { space.focused?.web?.backspace() },
-            btn("↵ Enter") { space.focused?.web?.enter() },
-            btn("🌐 פתח כתובת/חיפוש") {
-                val t = input.text.toString()
-                val f = space.focused
-                if (f?.web != null && f.web?.webView?.url != LAUNCHER_URL) f.web?.openInput(t) else openWeb(urlFor(t))
-                input.setText("")
-            },
-            btn("＋ חלון חדש") { val t = input.text.toString(); openWeb(if (t.isBlank()) "https://www.google.com" else urlFor(t)); input.setText("") }
-        ))
+        val urlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(input)
+            addView(btn("🌐 פתח") { openFromInput() })
+            addView(btn("＋ חלון") { val t = input.text.toString(); openWeb(if (t.isBlank()) "https://www.google.com" else urlFor(t)); input.setText("") })
+        }
+        controls.addView(urlRow)
         root.addView(controls)
         setContentView(root)
         syncSizeSeek()
@@ -606,11 +635,61 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun sendText() {
+    private fun openFromInput() {
         val t = input.text.toString()
-        if (t.isEmpty()) return
-        space.focused?.web?.typeText(t)
+        if (t.isBlank()) return
+        val f = space.focused
+        if (f?.web != null && f.web?.webView?.url != LAUNCHER_URL) f.web?.openInput(t) else openWeb(urlFor(t))
         input.setText("")
+    }
+
+    // ---------------------------------------------------------------- live keyboard
+
+    private lateinit var liveInput: EditText
+    private var liveGuard = false
+    private val sentinel = "\u200B"
+
+    private val liveWatcher = object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            if (liveGuard || s == null) return
+            val web = space.focused?.web ?: return
+            if (before > 0) web.backspace(before)
+            if (count > 0) {
+                val ins = s.subSequence(start, start + count).toString().replace(sentinel, "")
+                if (ins.isNotEmpty()) web.typeText(ins)
+            }
+        }
+        override fun afterTextChanged(e: Editable?) {
+            if (liveGuard || e == null) return
+            if (e.isEmpty() || e[0] != '\u200B') {
+                liveGuard = true
+                e.insert(0, sentinel)
+                liveGuard = false
+            }
+        }
+    }
+
+    private fun resetLive() {
+        if (!::liveInput.isInitialized) return
+        liveGuard = true
+        liveInput.setText(sentinel)
+        liveInput.setSelection(liveInput.text.length)
+        liveGuard = false
+    }
+
+    fun showKeyboard() {
+        if (isInPictureInPictureMode || !::liveInput.isInitialized) return
+        resetLive()
+        liveInput.requestFocus()
+        val imm = getSystemService(InputMethodManager::class.java)
+        liveInput.post { imm.showSoftInput(liveInput, InputMethodManager.SHOW_IMPLICIT) }
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(InputMethodManager::class.java)
+        imm.hideSoftInputFromWindow(liveInput.windowToken, 0)
+        liveInput.clearFocus()
     }
 
     private fun syncSizeSeek() {
