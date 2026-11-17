@@ -11,6 +11,11 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.widget.BaseAdapter
+import android.widget.GridView
+import android.widget.ImageView
 import android.hardware.display.DisplayManager
 import android.media.projection.MediaProjectionManager
 import android.opengl.GLSurfaceView
@@ -453,10 +458,11 @@ class MainActivity : Activity() {
         val list = packageManager.queryIntentActivities(i, PackageManager.MATCH_ALL)
         val arr = JSONArray()
         val seen = HashSet<String>()
-        for (ri in list.sortedBy { it.loadLabel(packageManager).toString().lowercase() }) {
-            val pkg = ri.activityInfo.packageName
+        val favs = favorites()
+        val items = list.map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
+        for ((pkg, label) in sortApps(items, { it.first }, { it.second })) {
             if (pkg == packageName || !seen.add(pkg)) continue
-            arr.put(JSONObject().put("pkg", pkg).put("label", ri.loadLabel(packageManager).toString()))
+            arr.put(JSONObject().put("pkg", pkg).put("label", (if (favs.contains(pkg)) "⭐" else "") + label))
         }
         return arr.toString()
     }
@@ -476,40 +482,48 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    private fun btn(text: String, onClick: () -> Unit) = Button(this).apply {
+    private val cBtn = Color.rgb(32, 42, 60)
+    private val cPanel = Color.rgb(18, 24, 36)
+    private val cAccent = Color.rgb(47, 127, 224)
+
+    private fun rounded(color: Int, r: Int = 14) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(r).toFloat()
+    }
+
+    /** Large, easy-to-hit button (usable without looking while wearing the glasses). */
+    private fun btn(text: String, color: Int = cBtn, onClick: () -> Unit) = Button(this).apply {
         this.text = text
         isAllCaps = false
         textSize = 17f
         setTextColor(Color.WHITE)
-        setBackgroundColor(Color.rgb(34, 44, 62))
-        setPadding(dp(14), dp(6), dp(14), dp(6))
+        background = rounded(color)
+        setPadding(dp(8), dp(4), dp(8), dp(4))
         setOnClickListener { onClick() }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(50)).apply { marginStart = dp(6) }
+        layoutParams = LinearLayout.LayoutParams(0, dp(62), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
     }
 
-    private fun row(vararg views: View): View {
-        val ll = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        views.forEach { ll.addView(it) }
-        return HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(ll)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) }
-        }
+    private fun gridRow(vararg views: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        views.forEach { addView(it) }
     }
 
     private fun seek(label: String, max: Int, value: Int, onChange: (Int) -> Unit): Pair<View, SeekBar> {
         val ll = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(8), dp(4), dp(8))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         val tv = TextView(this).apply {
-            text = label; setTextColor(Color.rgb(200, 210, 230)); textSize = 14f
-            layoutParams = LinearLayout.LayoutParams(dp(86), ViewGroup.LayoutParams.WRAP_CONTENT)
+            text = label; setTextColor(Color.rgb(210, 220, 240)); textSize = 16f
+            layoutParams = LinearLayout.LayoutParams(dp(100), ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         val sb = SeekBar(this).apply {
             this.max = max; progress = value
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            minimumHeight = dp(40)
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) onChange(p) }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -520,126 +534,319 @@ class MainActivity : Activity() {
         return ll to sb
     }
 
+    // ---- tabs
+
+    private enum class Tab(val icon: String, val label: String) {
+        CONTROL("🎮", "שליטה"), HOME("⌂", "בית"), KEYS("⌨", "מקלדת"), DISPLAY("☀", "תצוגה")
+    }
+
+    private var tab = Tab.CONTROL
+    private lateinit var panel: FrameLayout
+    private val tabViews = HashMap<Tab, View>()
+    private val tabButtons = HashMap<Tab, TextView>()
+
+    private fun selectTab(t: Tab, openKeyboard: Boolean = true) {
+        tab = t
+        panel.removeAllViews()
+        panel.addView(tabViews[t]!!)
+        for ((k, v) in tabButtons) {
+            v.background = rounded(if (k == t) cAccent else cBtn, 12)
+        }
+        // Home tab needs room for the app grid: give it ~55% of the screen
+        val big = t == Tab.HOME
+        stage.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, if (big) 0.8f else 1f).apply { topMargin = dp(6) }
+        controls.layoutParams = if (big) LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f)
+        else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        panel.layoutParams = if (big) LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        if (t == Tab.KEYS && openKeyboard) showKeyboard()
+        if (t != Tab.KEYS && ::liveInput.isInitialized && liveInput.hasFocus()) hideKeyboard()
+        if (t == Tab.HOME) loadPhoneApps()
+    }
+
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(12, 16, 24))
+            setBackgroundColor(Color.rgb(10, 13, 20))
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         statusText = TextView(this).apply {
-            setTextColor(Color.rgb(170, 200, 255)); textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(160, 190, 240)); textSize = 13f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(6), 0, dp(6), 0)
         }
         root.addView(statusText)
 
-        stage = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(6) }
-            setBackgroundColor(Color.BLACK)
-        }
+        stage = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         touchpad = TouchpadView(this, this)
         stage.addView(touchpad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(stage)
 
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        panel = FrameLayout(this).apply {
+            background = rounded(cPanel, 18)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        controls.addView(panel)
+
+        tabViews[Tab.CONTROL] = buildControlTab()
+        tabViews[Tab.HOME] = buildHomeTab()
+        tabViews[Tab.KEYS] = buildKeysTab()
+        tabViews[Tab.DISPLAY] = buildDisplayTab()
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(66)).apply { topMargin = dp(6) }
+        }
+        for (t in Tab.values()) {
+            val tv = TextView(this).apply {
+                text = "${t.icon}\n${t.label}"
+                gravity = Gravity.CENTER
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(3), 0, dp(3), 0) }
+                setOnClickListener { selectTab(t) }
+            }
+            tabButtons[t] = tv
+            nav.addView(tv)
+        }
+        controls.addView(nav)
+        root.addView(controls)
+        setContentView(root)
+        selectTab(Tab.CONTROL)
+        syncSizeSeek()
+    }
+
+    private fun buildControlTab(): View {
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         modeBtn = btn("") { setArMode(!space.arMode) }
         hideBtn = btn("") { setHidden(!space.hidden) }
         updateModeButtons()
-
-        controls.addView(row(
-            modeBtn,
-            hideBtn,
-            btn("⌂ בית") { openWeb(LAUNCHER_URL, launcher = true) },
+        v.addView(gridRow(modeBtn, hideBtn))
+        v.addView(gridRow(
             btn("◎ מרכוז") { recenter() },
             btn("⇄ חלון הבא") { focusNext() },
-            btn("‹ אחורה") { space.focused?.web?.back() },
-            btn("✕ סגור חלון") { space.focused?.let { closeWindow(it) } },
-            btn("📱 שיקוף") { requestMirror() }
+            btn("‹ אחורה") { space.focused?.web?.back() }
+        ))
+        v.addView(gridRow(
+            btn("⌂ בית במשקפיים") { openWeb(LAUNCHER_URL, launcher = true) },
+            btn("📱 שיקוף טלפון") { requestMirror() },
+            btn("✕ סגור חלון", Color.rgb(90, 36, 40)) { space.focused?.let { closeWindow(it) } }
         ))
         anchorBox = CheckBox(this).apply {
-            text = "מסך קבוע במקום"
+            text = "מסך קבוע במקום (מעקב ראש)"
+            textSize = 16f
             setTextColor(Color.WHITE)
             isChecked = space.anchored
+            setPadding(dp(4), dp(8), dp(4), dp(8))
             setOnCheckedChangeListener { _, c -> space.anchored = c; prefs.edit().putBoolean("anchored", c).apply() }
         }
-        controls.addView(row(
-            anchorBox,
-            btn("A+") { space.focused?.web?.zoom(10) },
-            btn("A−") { space.focused?.web?.zoom(-10) },
-            btn("🖥 מחשב/נייד") {
-                val on = space.focused?.web?.toggleDesktop()
-                if (on != null) toast(if (on) "מצב מחשב" else "מצב נייד")
-            },
-            btn("⚙ הגדרות") { showSettings() }
-        ))
+        v.addView(anchorBox)
+        return v
+    }
 
-        val (distRow, _) = seek("מרחק", 40, ((space.distance - 1f) / 0.1f).toInt()) {
-            space.distance = 1f + it * 0.1f; prefs.edit().putFloat("distance", space.distance).apply()
-        }
-        val (curveRow, _) = seek("עיקול", 100, (space.curve * 100).toInt()) {
-            space.curve = it / 100f; prefs.edit().putFloat("curve", space.curve).apply()
-        }
-        val (sizeRow, sb) = seek("גודל חלון", 100, 30) { p ->
-            space.focused?.let { it.widthM = 0.4f + p * 0.04f }
-        }
-        sizeSeek = sb
-        val (brightRow, _) = seek("בהירות", 100, (space.brightness * 100).toInt()) {
-            space.brightness = (it.coerceAtLeast(5)) / 100f
-            prefs.edit().putFloat("brightness", space.brightness).apply()
-        }
-        controls.addView(brightRow)
-        controls.addView(distRow)
-        controls.addView(curveRow)
-        controls.addView(sizeRow)
-
+    private fun buildKeysTab(): View {
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         liveInput = EditText(this).apply {
-            hint = "⌨ מקלדת: מה שתקליד כאן נכתב ישר בחלון"
+            hint = "מה שתקליד כאן נכתב ישר בחלון שבמשקפיים"
             setHintTextColor(Color.rgb(120, 140, 170))
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 18f
             isSingleLine = true
             imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-            setBackgroundColor(Color.rgb(24, 34, 52))
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            background = rounded(Color.rgb(28, 40, 62), 12)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
             setOnEditorActionListener { _, _, _ -> space.focused?.web?.enter(); resetLive(); true }
             addTextChangedListener(liveWatcher)
         }
         resetLive()
-        val kbRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
-            addView(liveInput)
-            addView(btn("⌨") { showKeyboard() })
-            addView(btn("⌫") { space.focused?.web?.backspace() })
-            addView(btn("↵") { space.focused?.web?.enter(); resetLive() })
-            addView(btn("הסתר") { hideKeyboard() })
+        v.addView(liveInput)
+        v.addView(gridRow(
+            btn("⌫ מחק") { space.focused?.web?.backspace() },
+            btn("↵ Enter") { space.focused?.web?.enter(); resetLive() },
+            btn("⌨ פתח מקלדת") { showKeyboard() }
+        ))
+        v.addView(gridRow(
+            btn("A+ הגדל טקסט") { space.focused?.web?.zoom(10) },
+            btn("A− הקטן טקסט") { space.focused?.web?.zoom(-10) },
+            btn("🖥 מחשב/נייד") {
+                val on = space.focused?.web?.toggleDesktop()
+                if (on != null) toast(if (on) "מצב מחשב" else "מצב נייד")
+            }
+        ))
+        return v
+    }
+
+    private fun buildDisplayTab(): View {
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val (brightRow, _) = seek("☀ בהירות", 100, (space.brightness * 100).toInt()) {
+            space.brightness = (it.coerceAtLeast(5)) / 100f
+            prefs.edit().putFloat("brightness", space.brightness).apply()
         }
-        controls.addView(kbRow)
+        val (sizeRow, sb) = seek("⤢ גודל חלון", 100, 30) { p ->
+            space.focused?.let { it.widthM = 0.4f + p * 0.04f }
+        }
+        sizeSeek = sb
+        val (distRow, _) = seek("↔ מרחק", 40, ((space.distance - 1f) / 0.1f).toInt()) {
+            space.distance = 1f + it * 0.1f; prefs.edit().putFloat("distance", space.distance).apply()
+        }
+        val (curveRow, _) = seek("◠ עיקול", 100, (space.curve * 100).toInt()) {
+            space.curve = it / 100f; prefs.edit().putFloat("curve", space.curve).apply()
+        }
+        v.addView(brightRow); v.addView(sizeRow); v.addView(distRow); v.addView(curveRow)
+        v.addView(gridRow(btn("⚙ הגדרות חיישן ומתקדם") { showSettings() }))
+        return v
+    }
+
+    // ---- Home tab: launcher on the phone
+
+    private class AppItem(val pkg: String, val label: String, val icon: Drawable?)
+    private val phoneApps = ArrayList<AppItem>()
+    private lateinit var appsAdapter: BaseAdapter
+    private var appsLoaded = false
+
+    private val defaultFavs = listOf(
+        "com.whatsapp", "com.waze", "com.google.android.apps.maps", "com.openai.chatgpt",
+        "com.google.android.gm", "com.google.android.youtube", "com.android.chrome",
+        "com.google.android.calendar", "com.spotify.music", "com.google.android.apps.docs"
+    )
+
+    private fun favorites(): List<String> {
+        val raw = prefs.getString("favs", null) ?: return defaultFavs
+        return raw.split(',').filter { it.isNotBlank() }
+    }
+
+    private fun toggleFavorite(pkg: String): Boolean {
+        val f = favorites().toMutableList()
+        val added = if (f.remove(pkg)) false else { f.add(pkg); true }
+        prefs.edit().putString("favs", f.joinToString(",")).apply()
+        return added
+    }
+
+    /** Favorites first (in favorite order), then alphabetical. */
+    private fun <T> sortApps(items: List<T>, pkg: (T) -> String, label: (T) -> String): List<T> {
+        val favs = favorites()
+        return items.sortedWith(compareBy<T> { val i = favs.indexOf(pkg(it)); if (i < 0) Int.MAX_VALUE else i }
+            .thenBy { label(it).lowercase() })
+    }
+
+    private fun loadPhoneApps() {
+        if (appsLoaded) return
+        appsLoaded = true
+        Thread {
+            val pm = packageManager
+            val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val seen = HashSet<String>()
+            val list = ArrayList<AppItem>()
+            for (ri in pm.queryIntentActivities(i, PackageManager.MATCH_ALL)) {
+                val pkg = ri.activityInfo.packageName
+                if (pkg == packageName || !seen.add(pkg)) continue
+                val icon = try { ri.loadIcon(pm) } catch (_: Exception) { null }
+                list.add(AppItem(pkg, ri.loadLabel(pm).toString(), icon))
+            }
+            val sorted = sortApps(list, { it.pkg }, { it.label })
+            runOnUiThread {
+                phoneApps.clear(); phoneApps.addAll(sorted)
+                appsAdapter.notifyDataSetChanged()
+            }
+        }.start()
+    }
+
+    private fun buildHomeTab(): View {
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         input = EditText(this).apply {
-            hint = "כתובת אתר או חיפוש"
+            hint = "🔎 חיפוש או כתובת אתר"
             setHintTextColor(Color.rgb(120, 130, 150))
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 16f
             isSingleLine = true
             imeOptions = EditorInfo.IME_ACTION_GO
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            background = rounded(Color.rgb(28, 40, 62), 12)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
             setOnEditorActionListener { _, _, _ -> openFromInput(); true }
         }
-        val urlRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(input)
-            addView(btn("🌐 פתח") { openFromInput() })
-            addView(btn("＋ חלון") { val t = input.text.toString(); openWeb(if (t.isBlank()) "https://www.google.com" else urlFor(t)); input.setText("") })
+        val go = btn("פתח") { openFromInput() }
+        go.layoutParams = LinearLayout.LayoutParams(dp(90), dp(52)).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        v.addView(gridRow(input, go))
+
+        // Sites strip
+        val sites = listOf(
+            "🔎 Google" to "https://www.google.com", "▶️ YouTube" to "https://m.youtube.com",
+            "✉️ Gmail" to "https://mail.google.com", "💬 WhatsApp" to "https://web.whatsapp.com",
+            "🗺️ מפות" to "https://www.google.com/maps", "🤖 ChatGPT" to "https://chatgpt.com",
+            "📁 Drive" to "https://drive.google.com", "📅 יומן" to "https://calendar.google.com",
+            "📰 ynet" to "https://www.ynet.co.il"
+        )
+        val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((label, url) in sites) {
+            strip.addView(TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = rounded(cBtn, 20)
+                setPadding(dp(14), 0, dp(14), 0)
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(46)).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+                setOnClickListener { openWeb(url) }
+            })
         }
-        controls.addView(urlRow)
-        root.addView(controls)
-        setContentView(root)
-        syncSizeSeek()
+        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(strip) })
+
+        v.addView(TextView(this).apply {
+            text = "אפליקציות · ⭐ מועדפים ראשונים · לחיצה ארוכה = הוספה/הסרה ממועדפים"
+            textSize = 12f
+            setTextColor(Color.rgb(140, 160, 190))
+            setPadding(dp(8), dp(6), dp(8), dp(2))
+        })
+
+        appsAdapter = object : BaseAdapter() {
+            override fun getCount() = phoneApps.size
+            override fun getItem(position: Int) = phoneApps[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val cell = (convertView as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setPadding(dp(2), dp(8), dp(2), dp(6))
+                    addView(ImageView(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(52), dp(52)) })
+                    addView(TextView(this@MainActivity).apply {
+                        textSize = 12f; setTextColor(Color.WHITE); maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(4), 0, 0)
+                    })
+                }
+                val a = phoneApps[position]
+                (cell.getChildAt(0) as ImageView).setImageDrawable(a.icon)
+                val fav = favorites().contains(a.pkg)
+                (cell.getChildAt(1) as TextView).text = (if (fav) "⭐" else "") + a.label
+                return cell
+            }
+        }
+        val grid = GridView(this).apply {
+            numColumns = GridView.AUTO_FIT
+            columnWidth = dp(84)
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            adapter = appsAdapter
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            setOnItemClickListener { _, _, pos, _ -> launchApp(phoneApps[pos].pkg) }
+            setOnItemLongClickListener { _, _, pos, _ ->
+                val a = phoneApps[pos]
+                toast(if (toggleFavorite(a.pkg)) "⭐ נוסף למועדפים: ${a.label}" else "הוסר מהמועדפים: ${a.label}")
+                val sorted = sortApps(phoneApps.toList(), { it.pkg }, { it.label })
+                phoneApps.clear(); phoneApps.addAll(sorted)
+                appsAdapter.notifyDataSetChanged()
+                true
+            }
+        }
+        v.addView(grid)
+        v.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        return v
     }
 
     private fun urlFor(t: String): String {
@@ -696,6 +903,7 @@ class MainActivity : Activity() {
 
     fun showKeyboard() {
         if (isInPictureInPictureMode || !::liveInput.isInitialized) return
+        if (tab != Tab.KEYS) selectTab(Tab.KEYS, openKeyboard = false)
         resetLive()
         liveInput.requestFocus()
         val imm = getSystemService(InputMethodManager::class.java)
@@ -761,10 +969,10 @@ class MainActivity : Activity() {
 
     private fun updateModeButtons() {
         if (!::modeBtn.isInitialized) return
-        modeBtn.text = if (space.arMode) "🖥 מצב מסכים" else "🕶 משקפיים חכמים"
-        modeBtn.setBackgroundColor(if (space.arMode) Color.rgb(20, 90, 70) else Color.rgb(34, 44, 62))
+        modeBtn.text = if (space.arMode) "🖥 עבור למצב מסכים" else "🕶 עבור למשקפיים חכמים"
+        modeBtn.background = rounded(if (space.arMode) Color.rgb(20, 110, 80) else Color.rgb(60, 50, 120))
         hideBtn.text = if (space.hidden) "👁 הצג תוכן" else "🙈 הסתר הכל"
-        hideBtn.setBackgroundColor(if (space.hidden) Color.rgb(140, 40, 40) else Color.rgb(34, 44, 62))
+        hideBtn.background = rounded(if (space.hidden) Color.rgb(160, 45, 45) else cBtn)
     }
 
     fun setArMode(on: Boolean) {
