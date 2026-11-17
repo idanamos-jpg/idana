@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hud</title>
+<style>
+  /* AR panel: pure black (#000) = nothing lit in the glasses = see-through. */
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body {
+    font-family: system-ui, Roboto, Arial, sans-serif; color: #d8ecff;
+    display: flex; flex-direction: column; justify-content: center; padding: 0 18px;
+  }
+  #time { font-size: 76px; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  #date { font-size: 21px; margin-top: 8px; color: #8fb6dd; }
+  #bat  { font-size: 19px; margin-top: 6px; color: #8fb6dd; }
+  .low  { color: #ff8a7a !important; }
+</style>
+</head>
+<body>
+  <div id="time"></div>
+  <div id="date"></div>
+  <div id="bat"></div>
+<script>
+  function tick() {
+    var n = new Date();
+    document.getElementById("time").textContent = n.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+    document.getElementById("date").textContent = n.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+    if (window.XR && XR.battery) {
+      var b = XR.battery(), c = XR.charging();
+      var el = document.getElementById("bat");
+      el.textContent = "סוללת טלפון " + b + "%" + (c ? " ⚡" : "");
+      el.className = (b <= 20 && !c) ? "low" : "";
+    }
+  }
+  tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

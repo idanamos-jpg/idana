@@ -50,6 +50,7 @@ class MainActivity : Activity() {
 
     companion object {
         const val LAUNCHER_URL = "file:///android_asset/launcher.html"
+        const val HUD_URL = "file:///android_asset/hud.html"
         private const val REQ_MIRROR = 41
     }
 
@@ -89,6 +90,7 @@ class MainActivity : Activity() {
         space.curve = prefs.getFloat("curve", 0.4f)
         space.fovY = prefs.getFloat("fovY", 23.5f)
         space.anchored = prefs.getBoolean("anchored", true)
+        space.brightness = prefs.getFloat("brightness", 1f)
 
         tracker = ImuTracker(this) { msg -> runOnUiThread { imuStatus = msg; updateStatus() } }
         tracker.invertYaw = prefs.getBoolean("invYaw", false)
@@ -233,6 +235,8 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- windows
 
     fun openWeb(url: String, launcher: Boolean = false) {
+        if (space.arMode && !launcher && url != LAUNCHER_URL) { openArPanel(url); return }
+        if (space.arMode) setArMode(false)
         if (launcher) {
             space.windows.firstOrNull { it.title == "__home__" || it.web?.webView?.url == LAUNCHER_URL }?.let {
                 space.focused = it; return
@@ -258,12 +262,12 @@ class MainActivity : Activity() {
         Math.toDegrees(2.0 * atan(w.widthM / 2.0 / space.distance)).toFloat()
 
     private fun place(w: XWindow) {
-        val base = if (space.windows.isEmpty()) 0f else space.viewYaw
+        val base = if (space.visibleWindows().isEmpty()) 0f else space.viewYaw
         val aw = angularWidth(w)
         for (k in 0..14) {
             val step = ((k + 1) / 2) * (aw + 3f)
             val yaw = base + if (k % 2 == 1) -step else step
-            val free = space.windows.none { o ->
+            val free = space.visibleWindows().none { o ->
                 abs(Geo.wrap180(o.yaw - yaw)) < (aw + angularWidth(o)) / 2f + 1f && abs(o.pitch - space.viewPitch) < 20f
             }
             if (free) { w.yaw = Geo.wrap180(yaw); w.pitch = 0f; return }
@@ -274,7 +278,7 @@ class MainActivity : Activity() {
     fun closeWindow(w: XWindow) {
         if (!space.windows.remove(w)) return
         w.released = true
-        if (space.focused === w) space.focused = space.windows.firstOrNull()
+        if (space.focused === w) space.focused = space.visibleWindows().firstOrNull()
         if (w.kind == XWindow.Kind.MIRROR) {
             mirrorWindow = null
             stopService(Intent(this, MirrorService::class.java))
@@ -293,7 +297,7 @@ class MainActivity : Activity() {
     }
 
     private fun focusNext() {
-        val list = space.windows.sortedByDescending { it.yaw }
+        val list = space.visibleWindows().sortedByDescending { it.yaw }
         if (list.isEmpty()) return
         val i = list.indexOf(space.focused)
         val n = list[(i + 1) % list.size]
@@ -314,6 +318,7 @@ class MainActivity : Activity() {
     }
 
     fun moveCursor(dYaw: Float, dPitch: Float, drag: XWindow?) {
+        space.cursorShownUntil = System.currentTimeMillis() + 3000
         space.cursorYaw = Geo.wrap180(space.cursorYaw - dYaw)
         space.cursorPitch = (space.cursorPitch - dPitch).coerceIn(-80f, 80f)
         if (drag != null) {
@@ -374,6 +379,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- mirror / apps
 
     fun requestMirror() {
+        if (space.arMode) setArMode(false)
         mirrorWindow?.let { space.focused = it; return }
         val mpm = getSystemService(MediaProjectionManager::class.java)
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_MIRROR)
@@ -536,8 +542,13 @@ class MainActivity : Activity() {
         root.addView(stage)
 
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        modeBtn = btn("") { setArMode(!space.arMode) }
+        hideBtn = btn("") { setHidden(!space.hidden) }
+        updateModeButtons()
 
         controls.addView(row(
+            modeBtn,
+            hideBtn,
             btn("⌂ בית") { openWeb(LAUNCHER_URL, launcher = true) },
             btn("◎ מרכוז") { recenter() },
             btn("⇄ חלון הבא") { focusNext() },
@@ -572,6 +583,11 @@ class MainActivity : Activity() {
             space.focused?.let { it.widthM = 0.4f + p * 0.04f }
         }
         sizeSeek = sb
+        val (brightRow, _) = seek("בהירות", 100, (space.brightness * 100).toInt()) {
+            space.brightness = (it.coerceAtLeast(5)) / 100f
+            prefs.edit().putFloat("brightness", space.brightness).apply()
+        }
+        controls.addView(brightRow)
         controls.addView(distRow)
         controls.addView(curveRow)
         controls.addView(sizeRow)
@@ -701,8 +717,8 @@ class MainActivity : Activity() {
     private fun updateStatus() {
         if (!::statusText.isInitialized) return
         val g = if (glasses != null) "משקפיים: מחוברים ✓" else "משקפיים: לא מחוברים (תצוגה מקדימה בטלפון)"
-        val mode = if (space.headTracking()) "· מסך קבוע במקום" else "· נעול לראש"
-        statusText.text = "$g   ·   $imuStatus   $mode   ·   חלונות: ${space.windows.size}"
+        val mode = (if (space.arMode) "· 🕶 משקפיים חכמים " else "") + if (space.headTracking()) "· קבוע במקום" else "· נעול לראש"
+        statusText.text = "$g   ·   $imuStatus   $mode   ·   חלונות: ${space.visibleWindows().size}"
     }
 
     private fun showSettings() {
@@ -735,6 +751,86 @@ class MainActivity : Activity() {
             .setNegativeButton("חבר חיישן מחדש") { _, _ -> tracker.stop(); tracker.start() }
             .show()
     }
+
+    // ---------------------------------------------------------------- Smart Glasses (AR) mode
+
+    private lateinit var modeBtn: Button
+    private lateinit var hideBtn: Button
+    private var focusedWork: XWindow? = null
+    private var focusedAr: XWindow? = null
+
+    private fun updateModeButtons() {
+        if (!::modeBtn.isInitialized) return
+        modeBtn.text = if (space.arMode) "🖥 מצב מסכים" else "🕶 משקפיים חכמים"
+        modeBtn.setBackgroundColor(if (space.arMode) Color.rgb(20, 90, 70) else Color.rgb(34, 44, 62))
+        hideBtn.text = if (space.hidden) "👁 הצג תוכן" else "🙈 הסתר הכל"
+        hideBtn.setBackgroundColor(if (space.hidden) Color.rgb(140, 40, 40) else Color.rgb(34, 44, 62))
+    }
+
+    fun setArMode(on: Boolean) {
+        if (space.arMode == on) return
+        if (on) focusedWork = space.focused else focusedAr = space.focused
+        space.arMode = on
+        resetLive()
+        if (on && space.windows.none { it.ar && !it.released }) openHud()
+        space.focused = (if (on) focusedAr else focusedWork)?.takeIf { space.visible(it) }
+            ?: space.visibleWindows().firstOrNull()
+        space.cursorYaw = space.viewYaw
+        space.cursorPitch = space.viewPitch
+        syncSizeSeek()
+        updateModeButtons()
+        updateStatus()
+    }
+
+    fun setHidden(h: Boolean) {
+        space.hidden = h
+        updateModeButtons()
+    }
+
+    /** Minimal info panel (time / date / battery) at the lower-right edge of the view. */
+    private fun openHud() {
+        val w = XWindow(nextId++, XWindow.Kind.WEB, 840, 360)
+        w.ar = true
+        w.widthM = 0.62f
+        // Lower-right edge of the current view, leaving the centre free
+        w.yaw = Geo.wrap180(space.viewYaw - 14f)
+        w.pitch = (space.viewPitch - 7f).coerceIn(-60f, 60f)
+        try {
+            w.web = WebWindowHost(this, w, HUD_URL, true, 320)
+        } catch (e: Exception) {
+            toast("שגיאה בפתיחת חלונית: ${e.message}")
+            return
+        }
+        w.web?.webView?.setBackgroundColor(Color.BLACK)
+        space.windows.add(w)
+        space.focused = w
+    }
+
+    /** Generic compact AR panel for a web page, shown in dark mode. */
+    private fun openArPanel(url: String) {
+        val w = XWindow(nextId++, XWindow.Kind.WEB, 900, 1100)
+        w.ar = true
+        w.invert = true
+        w.widthM = 0.7f
+        // Left edge of the current view
+        w.yaw = Geo.wrap180(space.viewYaw + 15f)
+        w.pitch = space.viewPitch.coerceIn(-60f, 60f)
+        try {
+            w.web = WebWindowHost(this, w, url, false)
+        } catch (e: Exception) {
+            toast("שגיאה בפתיחת חלונית: ${e.message}")
+            return
+        }
+        space.windows.add(w)
+        space.focused = w
+        syncSizeSeek()
+    }
+
+    fun batteryLevel(): Int =
+        getSystemService(android.os.BatteryManager::class.java)
+            .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+
+    fun isCharging(): Boolean = getSystemService(android.os.BatteryManager::class.java).isCharging
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 }

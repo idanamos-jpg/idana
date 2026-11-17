@@ -25,6 +25,18 @@ class Space {
 
     @Volatile var tracker: ImuTracker? = null
 
+    // Smart Glasses / AR mode: separate set of minimal panels on true black
+    @Volatile var arMode = false
+    /** Instantly blank the glasses (everything black = see-through). */
+    @Volatile var hidden = false
+    /** Global brightness multiplier for content (additive display: brightness == opacity). */
+    @Volatile var brightness = 1f
+    /** In AR mode the pointer is only drawn briefly after it moves. */
+    @Volatile var cursorShownUntil = 0L
+
+    fun visible(w: XWindow): Boolean = !w.released && w.ar == arMode
+    fun visibleWindows(): List<XWindow> = windows.filter { visible(it) }
+
     fun headTracking(): Boolean {
         val t = tracker
         return anchored && t != null && t.active
@@ -37,7 +49,7 @@ class Space {
         val dir = Geo.dirFromAngles(yaw, pitch)
         var best: Hit? = null
         for (w in windows) {
-            if (w.released) continue
+            if (!visible(w)) continue
             val h = w.raycast(dir) ?: continue
             if (best == null || h.dist < best.dist) best = h
         }

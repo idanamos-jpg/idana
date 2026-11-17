@@ -201,5 +201,7 @@ class WebWindowHost(private val act: MainActivity, private val win: XWindow, sta
         @JavascriptInterface fun apps(): String = act.appsJson()
         @JavascriptInterface fun icon(pkg: String): String = act.appIcon(pkg)
         @JavascriptInterface fun launch(pkg: String) { act.runOnUiThread { act.launchApp(pkg) } }
+        @JavascriptInterface fun battery(): Int = act.batteryLevel()
+        @JavascriptInterface fun charging(): Boolean = act.isCharging()
     }
 }

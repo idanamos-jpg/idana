@@ -15,6 +15,12 @@ class XWindow(val id: Int, val kind: Kind, val pxW: Int, val pxH: Int) {
     @Volatile var pitch = 0f
     @Volatile var widthM = 1.4f
     @Volatile var title = ""
+    /** Belongs to Smart Glasses (AR) mode instead of the regular workspace. */
+    @Volatile var ar = false
+    /** Per-window brightness multiplier (0..1). */
+    @Volatile var brightness = 1f
+    /** Dark mode: invert luminance so white pages become black (= see-through). */
+    @Volatile var invert = false
 
     @Volatile var surfaceTexture: SurfaceTexture = newTexture()
     @Volatile var surface: Surface = Surface(surfaceTexture)

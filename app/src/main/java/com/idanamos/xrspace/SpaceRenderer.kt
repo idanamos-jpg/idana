@@ -75,6 +75,12 @@ class SpaceRenderer(
             try { w.surfaceTexture.release() } catch (_: Exception) {}
         }
 
+        if (space.hidden) {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+            return
+        }
+        val ar = space.arMode
+
         // View orientation
         var yaw: Float
         var pitch: Float
@@ -82,6 +88,9 @@ class SpaceRenderer(
         val t = space.tracker
         if (space.headTracking() && t != null) {
             yaw = t.yaw; pitch = t.pitch; roll = t.roll
+        } else if (ar) {
+            // Head-locked AR: panels stay at fixed positions in the field of view
+            yaw = 0f; pitch = 0f
         } else {
             val f = space.focused
             val ty = f?.yaw ?: 0f
@@ -104,7 +113,7 @@ class SpaceRenderer(
 
         val focused = space.focused
         for (w in space.windows) {
-            if (w.released) continue
+            if (!space.visible(w)) continue
             w.ensureMesh(space.distance, space.curve)
             val mesh = w.mesh ?: continue
 
@@ -131,9 +140,12 @@ class SpaceRenderer(
                 GLES20.glUniform1i(GLES20.glGetUniformLocation(progTex, "sTex"), 0)
                 GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(progTex, "uTex"), 1, false, w.texMatrix, 0)
                 GLES20.glUniform1f(GLES20.glGetUniformLocation(progTex, "uFocus"),
-                    if (w === focused && space.windows.size > 1) 1f else 0f)
+                    if (!ar && w === focused && space.windows.size > 1) 1f else 0f)
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(progTex, "uBright"),
+                    (space.brightness * w.brightness).coerceIn(0f, 1f))
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(progTex, "uInvert"), if (w.invert) 1f else 0f)
                 drawStrip(progTex, mesh)
-            } else {
+            } else if (!ar) {
                 GLES20.glUseProgram(progSolid)
                 GLES20.glUniform4f(GLES20.glGetUniformLocation(progSolid, "uColor"), 0.12f, 0.14f, 0.18f, 1f)
                 GLES20.glUniform1f(GLES20.glGetUniformLocation(progSolid, "uCircle"), 0f)
@@ -141,7 +153,8 @@ class SpaceRenderer(
             }
         }
 
-        // Pointer
+        // Pointer (in AR mode only right after it moved)
+        if (ar && System.currentTimeMillis() > space.cursorShownUntil) return
         val hit = space.cursorHit()
         val dist = (hit?.dist ?: space.distance) * 0.97f
         val s = dist * 0.011f
@@ -156,8 +169,9 @@ class SpaceRenderer(
         Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
         GLES20.glDisable(GLES20.GL_DEPTH_TEST)
         GLES20.glUseProgram(progSolid)
+        val b = if (ar) space.brightness.coerceIn(0.15f, 1f) else 1f
         GLES20.glUniform4f(GLES20.glGetUniformLocation(progSolid, "uColor"),
-            if (hit != null) 0.3f else 0.85f, if (hit != null) 0.7f else 0.85f, 1f, 1f)
+            (if (hit != null) 0.3f else 0.85f) * b, (if (hit != null) 0.7f else 0.85f) * b, b, 1f)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(progSolid, "uCircle"), 1f)
         drawStrip(progSolid, quad)
     }
@@ -247,10 +261,17 @@ class SpaceRenderer(
             precision mediump float;
             uniform samplerExternalOES sTex;
             uniform float uFocus;
+            uniform float uBright;
+            uniform float uInvert;
             varying vec2 vUV;
             varying vec2 vRaw;
             void main() {
                 vec4 c = texture2D(sTex, vUV);
+                if (uInvert > 0.5) {
+                    float y = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+                    c.rgb = clamp(c.rgb + (1.0 - 2.0 * y), 0.0, 1.0);
+                }
+                c.rgb *= uBright;
                 float e = min(min(vRaw.x, 1.0 - vRaw.x), min(vRaw.y, 1.0 - vRaw.y));
                 if (uFocus > 0.5 && e < 0.005) c = vec4(0.25, 0.62, 1.0, 1.0);
                 gl_FragColor = vec4(c.rgb, 1.0);
