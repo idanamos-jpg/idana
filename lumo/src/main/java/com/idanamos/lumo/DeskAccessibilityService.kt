@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
@@ -30,7 +30,7 @@ class DeskAccessibilityService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: DeskAccessibilityService? = null
-        private const val TAG = "XRDeskA11y"
+        private const val TAG = "LumoA11y"
     }
 
     private val main = Handler(Looper.getMainLooper())

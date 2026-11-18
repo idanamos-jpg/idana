@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.app.Activity
 import android.os.Bundle

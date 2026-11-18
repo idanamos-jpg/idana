@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.content.Context
 import android.content.SharedPreferences

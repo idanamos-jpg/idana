@@ -29,7 +29,7 @@ https://github.com/idanamos-jpg/idana/releases/latest/download/XR-Space.apk
 
 ---
 
-# XR Desk
+# Lumo
 
 אפליקציה שנייה בריפו: שולחן עבודה בסגנון DeX על משקפי ה-XREAL. השליטה בגודל המסך הווירטואלי ובמרחק שלו נעשית מהטלפון.
 
@@ -42,9 +42,9 @@ https://github.com/idanamos-jpg/idana/releases/latest/download/XR-Space.apk
 - **שליטה**: משטח מגע והקלדה מהטלפון (שירות נגישות), או עכבר Bluetooth.
 
 ## הורדה
-https://github.com/idanamos-jpg/idana/releases/latest/download/XR-Desk.apk
+https://github.com/idanamos-jpg/idana/releases/latest/download/Lumo.apk
 
 ## הפעלה ראשונה
 1. מתקינים, מחברים את המשקפיים, ושולחן העבודה עולה עליהם.
-2. הגדרות ← נגישות ← "XR Desk – שליטה במשקפיים" ← הפעלה. אם ההפעלה חסומה: פרטי אפליקציה ← ⋮ ← "אפשר הגדרות מוגבלות".
+2. הגדרות ← נגישות ← "Lumo – שליטה במשקפיים" ← הפעלה. אם ההפעלה חסומה: פרטי אפליקציה ← ⋮ ← "אפשר הגדרות מוגבלות".
 3. כדי שהחלונות יקבלו את הגודל שבחרתם: אפשרויות מפתח ← "אפשר חלונות בגודל משתנה" ו"אלץ פעילויות להיות ניתנות לשינוי גודל", ואז מפעילים מחדש את הטלפון.

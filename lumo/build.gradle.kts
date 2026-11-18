@@ -6,11 +6,11 @@ plugins {
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
-    namespace = "com.idanamos.xrdesk"
+    namespace = "com.idanamos.lumo"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.idanamos.xrdesk"
+        applicationId = "com.idanamos.lumo"
         minSdk = 30
         targetSdk = 35
         versionCode = runNumber

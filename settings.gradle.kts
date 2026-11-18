@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "XRSpace"
-include(":app", ":desk")
+include(":app", ":lumo")

@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -164,7 +164,7 @@ class MainActivity : Activity(), PadView.Listener {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(dp(10), dp(28), dp(10), dp(8))
         }
-        root.addView(text("XR Desk", 24f, Color.WHITE, true).apply { setPadding(dp(6), 0, dp(6), 0) }, lp())
+        root.addView(text("Lumo", 24f, Color.WHITE, true).apply { setPadding(dp(6), 0, dp(6), 0) }, lp())
         status = text("", 14f, dim).apply { setPadding(dp(6), 0, dp(6), 0) }
         root.addView(status, lp())
 
@@ -493,7 +493,7 @@ class MainActivity : Activity(), PadView.Listener {
             .setTitle("שליטה מהטלפון")
             .setMessage(
                 "כדי להזיז סמן, ללחוץ, לגלול ולהקליד בשולחן העבודה שבמשקפיים, מפעילים פעם אחת את השירות " +
-                    "\"XR Desk – שליטה במשקפיים\" בהגדרות נגישות.\n\n" +
+                    "\"Lumo – שליטה במשקפיים\" בהגדרות נגישות.\n\n" +
                     "אם ההפעלה חסומה (אפליקציה שהותקנה מקובץ): פרטי אפליקציה ← ⋮ למעלה ← \"אפשר הגדרות מוגבלות\", ואז שוב לנגישות.\n\n" +
                     "אפשר גם לחבר עכבר Bluetooth — הוא עובד ישירות על המשקפיים."
             )

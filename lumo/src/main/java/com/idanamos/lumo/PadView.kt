@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.annotation.SuppressLint
 import android.content.Context

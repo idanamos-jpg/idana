@@ -11,7 +11,7 @@
     </queries>
 
     <application
-        android:label="XR Desk"
+        android:label="Lumo"
         android:icon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
@@ -36,7 +36,7 @@
             android:name=".DesktopActivity"
             android:exported="false"
             android:launchMode="singleTask"
-            android:taskAffinity="com.idanamos.xrdesk.desktop"
+            android:taskAffinity="com.idanamos.lumo.desktop"
             android:excludeFromRecents="true"
             android:resizeableActivity="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
@@ -45,7 +45,7 @@
         <service
             android:name=".DeskAccessibilityService"
             android:exported="true"
-            android:label="XR Desk – שליטה במשקפיים"
+            android:label="Lumo – שליטה במשקפיים"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

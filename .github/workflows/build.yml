@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main, xr-desk]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug :desk:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle :app:assembleDebug :lumo:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Report errors
         if: failure()
@@ -41,7 +41,7 @@ jobs:
       - name: Rename APK
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk XR-Space.apk
-          cp desk/build/outputs/apk/debug/desk-debug.apk XR-Desk.apk
+          cp lumo/build/outputs/apk/debug/lumo-debug.apk Lumo.apk
 
       - name: Upload APKs (branch builds)
         if: github.ref != 'refs/heads/main'
@@ -50,7 +50,7 @@ jobs:
           name: apks
           path: |
             XR-Space.apk
-            XR-Desk.apk
+            Lumo.apk
 
       - name: Publish release
         if: github.ref == 'refs/heads/main'
@@ -60,5 +60,5 @@ jobs:
           name: XR Space ${{ github.run_number }}
           files: |
             XR-Space.apk
-            XR-Desk.apk
+            Lumo.apk
           make_latest: true

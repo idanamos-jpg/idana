@@ -1,4 +1,4 @@
-package com.idanamos.xrdesk
+package com.idanamos.lumo
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -81,7 +81,7 @@ class DeskView(ctx: Context) : View(ctx) {
         txt.textAlign = Paint.Align.CENTER
         txt.textSize = (r.height() * 0.06f).coerceAtLeast(12f)
         txt.alpha = 70
-        c.drawText("XR Desk", work.centerX(), work.centerY(), txt)
+        c.drawText("Lumo", work.centerX(), work.centerY(), txt)
         txt.textSize = (r.height() * 0.03f).coerceAtLeast(9f)
         c.drawText(Desk.summary(), work.centerX(), work.centerY() + txt.textSize * 1.8f, txt)
         txt.alpha = 255
