@@ -63,7 +63,7 @@ object Apps {
     }
 
     fun pinned(): List<String> {
-        val p = Desk.prefs()
+        val p = Desk.store()
         val s = p.getString("pinned", null)
         if (s == null) return defaultPins.filter { byPkg.containsKey(it) }.take(6)
         return s.split(',').filter { it.isNotBlank() }
@@ -74,7 +74,7 @@ object Apps {
     fun togglePin(pkg: String) {
         val cur = pinned().toMutableList()
         if (!cur.remove(pkg)) cur.add(pkg)
-        Desk.prefs().edit().putString("pinned", cur.joinToString(",")).apply()
+        Desk.store().edit().putString("pinned", cur.joinToString(",")).apply()
         Desk.ping()
     }
 }

@@ -73,7 +73,7 @@ object Desk {
         autoApply = prefs.getBoolean("autoApply", true)
     }
 
-    fun prefs(): SharedPreferences = prefs
+    fun store(): SharedPreferences = prefs
 
     /** Settings changed: save and redraw everywhere. */
     fun changed() {

@@ -334,8 +334,8 @@ class MainActivity : Activity(), PadView.Listener {
         }, equal = false).apply { (getChildAt(0).layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f } }, lp())
         pad = PadView(this, this)
         v.addView(pad, lp(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        val sens = seek(30, { p -> pad.sensitivity = 0.6f + p * 0.1f; Desk.prefs().edit().putFloat("sens", pad.sensitivity).apply() })
-        pad.sensitivity = Desk.prefs().getFloat("sens", 1.6f)
+        val sens = seek(30, { p -> pad.sensitivity = 0.6f + p * 0.1f; Desk.store().edit().putFloat("sens", pad.sensitivity).apply() })
+        pad.sensitivity = Desk.store().getFloat("sens", 1.6f)
         sens.progress = ((pad.sensitivity - 0.6f) / 0.1f).toInt()
         v.addView(row(text("מהירות סמן", 13f, dim), sens, equal = false).apply {
             (getChildAt(1).layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f }
