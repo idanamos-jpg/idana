@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, xr-desk]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle :app:assembleDebug :desk:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Report errors
         if: failure()
@@ -39,12 +39,26 @@ jobs:
           { echo '```'; grep -E "^e: |error:|What went wrong|Could not|Exception:" -A3 build.log | head -150; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk XR-Space.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk XR-Space.apk
+          cp desk/build/outputs/apk/debug/desk-debug.apk XR-Desk.apk
+
+      - name: Upload APKs (branch builds)
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: |
+            XR-Space.apk
+            XR-Desk.apk
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: XR Space ${{ github.run_number }}
-          files: XR-Space.apk
+          files: |
+            XR-Space.apk
+            XR-Desk.apk
           make_latest: true
