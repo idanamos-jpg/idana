@@ -534,7 +534,7 @@ class MainActivity : Activity() {
         views.forEach { addView(it) }
     }
 
-    private fun seek(label: String, max: Int, value: Int, onChange: (Int) -> Unit): Pair<View, SeekBar> {
+    private fun seek(label: String, max: Int, value: Int, onStop: ((Int) -> Unit)? = null, onChange: (Int) -> Unit): Pair<View, SeekBar> {
         val ll = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -552,7 +552,7 @@ class MainActivity : Activity() {
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) onChange(p) }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) { if (s != null) onStop?.invoke(s.progress) }
             })
         }
         ll.addView(tv); ll.addView(sb)
@@ -652,6 +652,23 @@ class MainActivity : Activity() {
         cinemaBtn = btn("🎬 חזרה למרחב המשקפיים", Color.rgb(20, 120, 80)) { exitCinema() }
         cinemaBtn.visibility = View.GONE
         v.addView(gridRow(cinemaBtn))
+        val (cRow, cSeek) = seek("↔ מרחק מסך", 60, 100 - cinemaScale(),
+            onStop = { p -> setCinemaScale(100 - p) }) { p -> cinemaScaleLabel?.text = "גודל ${100 - p}%" }
+        cinemaScaleLabel = TextView(this).apply {
+            text = "גודל ${cinemaScale()}%"; setTextColor(Color.rgb(160, 175, 200)); textSize = 13f
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        cinemaRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(cRow)
+            addView(gridRow(
+                cinemaScaleLabel!!,
+                btn("− רחוק") { cSeek.progress = (cSeek.progress + 10).coerceAtMost(60); setCinemaScale(100 - cSeek.progress) },
+                btn("+ קרוב") { cSeek.progress = (cSeek.progress - 10).coerceAtLeast(0); setCinemaScale(100 - cSeek.progress) }
+            ))
+            visibility = View.GONE
+        }
+        v.addView(cinemaRow)
         v.addView(gridRow(modeBtn, hideBtn))
         v.addView(gridRow(
             btn("◎ מרכוז") { recenter() },
@@ -1082,8 +1099,65 @@ class MainActivity : Activity() {
     private var sdx = 0f
     private var sdy = 0f
     private lateinit var cinemaBtn: Button
+    private var cinemaRow: View? = null
+    private var cinemaScaleLabel: TextView? = null
+    private var cinemaPkg: String? = null
+    private var askedFreeform = false
 
     private fun cinemaActive() = cinemaDisplayId >= 0
+
+    /** Size of the app window on the glasses, in % of the display. Smaller = looks farther away. */
+    private fun cinemaScale() = prefs.getInt("cinemaScale", 100).coerceIn(40, 100)
+
+    private fun setCinemaScale(s: Int) {
+        val v = s.coerceIn(40, 100)
+        prefs.edit().putInt("cinemaScale", v).apply()
+        cinemaScaleLabel?.text = "גודל $v%"
+        val pkg = cinemaPkg ?: return
+        val d = if (cinemaActive()) dm.getDisplay(cinemaDisplayId) else null
+        if (d != null) launchOnGlasses(pkg, d)
+    }
+
+    /** Centered window bounds on the glasses display for the current scale, or null for full screen. */
+    private fun cinemaBounds(d: Display): android.graphics.Rect? {
+        val s = cinemaScale()
+        if (s >= 100) return null
+        val m = d.mode
+        val w = maxOf(m.physicalWidth, m.physicalHeight)
+        val h = minOf(m.physicalWidth, m.physicalHeight)
+        val bw = w * s / 100
+        val bh = h * s / 100
+        val l = (w - bw) / 2
+        val t = (h - bh) / 2
+        return android.graphics.Rect(l, t, l + bw, t + bh)
+    }
+
+    /** If the system ignored the requested window size, explain how to allow resizable windows on the glasses. */
+    private fun checkFreeform(d: Display, bounds: android.graphics.Rect) {
+        main.postDelayed({
+            if (!cinemaActive() || askedFreeform) return@postDelayed
+            val w = a11y()?.appWindowWidth(d.displayId) ?: return@postDelayed
+            if (w <= bounds.width() * 1.05f) return@postDelayed
+            askedFreeform = true
+            AlertDialog.Builder(this)
+                .setTitle("שינוי מרחק המסך")
+                .setMessage(
+                    "המערכת פתחה את האפליקציה במסך מלא ולא בגודל שנבחר.\n\n" +
+                        "כדי לאפשר חלון בגודל משתנה במשקפיים:\n" +
+                        "1. הגדרות ← אפשרויות מפתח (Developer options).\n" +
+                        "2. מפעילים \"אפשר חלונות בגודל משתנה\" (Enable freeform windows) ו-\"אלץ פעילויות להיות ניתנות לשינוי גודל\".\n" +
+                        "3. אם יש: \"אלץ מצב שולחן עבודה\" (Force desktop mode).\n" +
+                        "4. מפעילים מחדש את הטלפון.\n\n" +
+                        "אם אפשרויות מפתח לא מופיעות: הגדרות ← אודות הטלפון ← פרטי תוכנה ← הקשה 7 פעמים על \"מספר Build\"."
+                )
+                .setPositiveButton("אפשרויות מפתח") { _, _ ->
+                    try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+                    catch (_: Exception) { toast("לא ניתן לפתוח את ההגדרות") }
+                }
+                .setNegativeButton("סגור", null)
+                .show()
+        }, 1500)
+    }
     private fun a11y(): XrAccessibilityService? = XrAccessibilityService.instance
 
     /** Open a regular Android app full-screen on the glasses (external display), controlled from the touchpad. */
@@ -1091,6 +1165,9 @@ class MainActivity : Activity() {
         val i = packageManager.getLaunchIntentForPackage(pkg) ?: run { toast("לא ניתן לפתוח"); return }
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val opts = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(d.displayId)
+        val bounds = cinemaBounds(d)
+        opts.setLaunchBounds(bounds ?: android.graphics.Rect(0, 0, maxOf(d.mode.physicalWidth, d.mode.physicalHeight),
+            minOf(d.mode.physicalWidth, d.mode.physicalHeight)))
         val g = glasses
         // Our 3D scene sits above apps on that display, so step it aside
         g?.glView?.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
@@ -1105,12 +1182,18 @@ class MainActivity : Activity() {
             launchApp(pkg)
             return
         }
+        val relaunch = cinemaActive() && cinemaPkg == pkg
+        cinemaPkg = pkg
         val m = d.mode
         cinemaW = maxOf(m.physicalWidth, m.physicalHeight).toFloat()
         cinemaH = minOf(m.physicalWidth, m.physicalHeight).toFloat()
-        ccx = cinemaW / 2f
-        ccy = cinemaH / 2f
+        if (!relaunch) {
+            ccx = cinemaW / 2f
+            ccy = cinemaH / 2f
+        }
         cinemaDisplayId = d.displayId
+        if (bounds != null) checkFreeform(d, bounds)
+        if (relaunch) { a11y()?.let { svc -> main.postDelayed({ if (cinemaActive()) svc.showCursor(d, ccx.toInt(), ccy.toInt()) }, 500) }; return }
         updateCinemaUi()
         val svc = a11y()
         if (svc == null) askAccessibility()
@@ -1137,6 +1220,7 @@ class MainActivity : Activity() {
     private fun updateCinemaUi() {
         if (!::cinemaBtn.isInitialized) return
         cinemaBtn.visibility = if (cinemaActive()) View.VISIBLE else View.GONE
+        cinemaRow?.visibility = if (cinemaActive()) View.VISIBLE else View.GONE
         if (cinemaActive()) selectTab(Tab.CONTROL)
         updateStatus()
     }

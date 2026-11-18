@@ -190,6 +190,16 @@ class XrAccessibilityService : AccessibilityService() {
 
     fun back() { performGlobalAction(GLOBAL_ACTION_BACK) }
 
+    /** Widest application window currently on [displayId], or null if unknown. */
+    fun appWindowWidth(displayId: Int): Int? {
+        if (Build.VERSION.SDK_INT < 30) return null
+        return try {
+            val list = windowsOnAllDisplays.get(displayId) ?: return null
+            list.filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+                .maxOfOrNull { w -> android.graphics.Rect().also { w.getBoundsInScreen(it) }.width() }
+        } catch (e: Exception) { null }
+    }
+
     // ------------------------------------------------------------------ text
 
     private fun focusedInput(displayId: Int): AccessibilityNodeInfo? {
